@@ -1,0 +1,105 @@
+units metal
+atom_style charge
+dimension 3
+boundary p p p
+
+read_data /home/users/hsulan5c/BaTiO3-ACE/simulation_BATIO_deltanom_c6/R.data
+change_box all triclinic
+replicate 10 10 10
+
+
+mass 1 137.327000 # Ba
+mass 2 15.999000 # O
+mass 3 47.867000 # Ti
+
+### interactions
+kspace_style ewald 1e-5 
+pair_style hybrid/overlay coul/long 7 pace               # the Cutoff of Coulomb interactions is set to 7 A (should try a larger cutoff)
+pair_coeff * * coul/long
+pair_coeff * * pace /home/users/hsulan5c/BaTiO3-ACE/BATIO_deltanom_c6.yaml Ba O Ti
+
+compute dist all pair/local dist
+compute min_dist all reduce min c_dist inputs local
+thermo_style 	custom step atoms etotal pe ke press temp ecoul elong  cella cellb cellc cellalpha cellbeta cellgamma fmax vol c_min_dist vol cpu cpuremain #c_extremes[*] #c_max_pace_gamma
+
+############################################
+# MINIMIZATION
+###########################################
+# 
+# fix 1 all box/relax tri 0.0 couple xyz couple xy xz yz vmax 0.001
+# 
+# min_style	cg
+# thermo 		1
+# minimize	0.0 1.0e-5 50000 50000
+# unfix 1
+# 
+# write_data ./minimization_final.lmp nocoeff nofix
+############################################
+
+thermo 100
+thermo_modify flush yes
+
+timestep        0.0005
+velocity all create 100 11111 dist gaussian
+run 0
+velocity all scale 100
+
+################################################
+# thermalization
+################################################
+fix prethermalization all npt temp 50 50 $(100.0*dt) tri 1.0 1.0 $(500.0*dt)
+
+dump dump_pre all custom 500 prethermalization.lammpstraj id type mass x y z vx vy vz #c_pace_gamma
+dump_modify dump_pre sort id
+dump_modify dump_pre  element Ba O Ti
+
+
+reset_timestep 0
+print "PRE-thermalization"
+run 3000
+unfix prethermalization
+undump dump_pre
+
+variable temp equal temp
+print "Temperature after thermalization at 50 K: ${temp}"
+
+write_data ./prethermalization_final_at10K.lmp nocoeff nofix
+
+################################################
+# HEATING
+################################################
+
+reset_timestep 0
+
+dump dump_heat all custom 500 heating.lammpstraj id type mass x y z vx vy vz #c_pace_gamma
+dump_modify dump_heat sort id
+dump_modify dump_heat  element Ba O Ti
+
+fix heating all npt temp 50 350 $(100.0*dt) tri 1.0 1.0 $(500.0*dt)
+print "HEATING"
+run 600000
+undump dump_heat
+unfix heating
+
+write_data ./heating_final.lmp nocoeff nofix
+ 
+################################################
+# COOLING
+################################################
+
+reset_timestep 0
+
+dump	dump_cool all custom 500 cooling.lammpstraj id type mass x y z vx vy vz #c_pace_gamma
+dump_modify dump_cool sort id
+dump_modify dump_cool  element Ba O Ti
+
+fix 	cooling all npt temp 350 50 $(100.0*dt) tri 1.0 1.0 $(500.0*dt)
+print "COOLING"
+run		600000
+undump dump_cool
+unfix cooling
+
+write_data ./cooling_final.lmp nocoeff nofix
+
+
+print "DONE"
