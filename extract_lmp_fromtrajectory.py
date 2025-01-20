@@ -2,6 +2,12 @@ import sys
 import numpy as np
 from datetime import datetime
 
+'''
+python extract_lmp_fromtrajectory.py <filename>.lammpstraj <outputfolder>
+* use full pwd for .lammpstraj and outputfolder
+'''
+
+
 def read_trajectory(filename):
     with open(filename, 'r') as f:
         lines = f.readlines()
