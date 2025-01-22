@@ -120,7 +120,7 @@ def loopthroughTi(dic:dict) -> list:
     mask_x  = (data['x'] > x_start) & (data['x'] < x_end)
     mask_y  = (data['y'] > y_start) & (data['y'] < y_end)
     mask_z  = (data['z'] > z_start) & (data['z'] < z_end)
-    Tis = data[ mask_Ti & mask_x & mask_y & mask_z ].sort_values(by=['x', 'y', 'z'], ascending=[True, True, True])
+    Tis = data[ mask_Ti & mask_x & mask_y & mask_z ].sort_values(by=['x', 'y', 'z'], ascending=[True, True, True])    # find the Ti that is not too close to the edge. the number of such Ti is different at each time step, i.e. print(len(Tis)) is different at each time step
     Px = []
     Py = []
     Pz = []
@@ -130,8 +130,8 @@ def loopthroughTi(dic:dict) -> list:
         Px.append(px)
         Py.append(py)
         Pz.append(pz)
-    return [ sum(Px)/len(Px), sum(Py)/len(Py), sum(Pz)/len(Pz)]
 
+    return [ Px, Py, Pz ]
     
 
 
@@ -154,15 +154,18 @@ def find_surroundingTi(data: pd.DataFrame, index: int) -> pd.DataFrame:
 
 
 
-    
 
 if __name__ == "__main__":
     # filename = sys.argv[1]
-    polarization = pd.DataFrame({}, columns = ['Px', 'Py', 'Pz'])
+    polarization_eachuc = pd.DataFrame({}, columns = ['Px', 'Py', 'Pz'])
+    polarization_avg = pd.DataFrame({}, columns = ['Px', 'Py', 'Pz'])
 
     for i in range(80000, 100000, 500):   # specify the timesteps to be extracted
         filename = f'./converted_timestep_{i}.lmp'
         info = read_lmp(filename)
-        polarization.loc[i] = loopthroughTi(info)
+        Px, Py, Pz = loopthroughTi(info)
+        polarization_eachuc.loc[i] = [ Px, Py, Pz ]
+        polarization_avg.loc[i] = [ sum(Px)/len(Px), sum(Py)/len(Py), sum(Pz)/len(Pz) ]
 
-    polarization.to_csv('fullunitcellpolarization.csv')
+    polarization_eachuc.to_csv('fullunitcellpolarization_eachuc.csv') # report polarization of each unit cell at each timeframe
+    polarization_avg.to_csv('fullunitcellpolarization_avg.csv') # report average polarization of the whole system at each timefrrame
