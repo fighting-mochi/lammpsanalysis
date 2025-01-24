@@ -61,7 +61,7 @@ def calculate_polarizationperunitcell(unitcell: pd.DataFrame) -> list:
     displacement['dp_y'] = displacement['y'] * displacement['charge'] * displacement['weight']
     displacement['dp_z'] = displacement['z'] * displacement['charge'] * displacement['weight']
     
-    latt_x = float(np.max(displacement['x'])) - float(np.min(displacement['x']))
+    latt_x = float(np.max(displacement['x'])) - float(np.min(displacement['x']))  # the volume of each unit cell is overestimated. will be changed soon to use the average volume per unit cell
     latt_y = float(np.max(displacement['y'])) - float(np.min(displacement['y']))
     latt_z = float(np.max(displacement['z'])) - float(np.min(displacement['z']))
     
