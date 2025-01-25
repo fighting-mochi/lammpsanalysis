@@ -101,12 +101,14 @@ def read_lmp(filename):
 def loopthroughTi(dic:dict) -> list:
     xlo, xhi, ylo, yhi, zlo, zhi = dic[0]
     data = dic[1].drop(['ppx', 'ppy', 'ppz'], axis = 1)
-    x_start = (xlo + xhi) / 4
+
+    x_start = (xlo + xhi) / 4 # /4 or 3/4 is just to avoid being too close to the system boundary (thus, can be changed), as periodic image is not yet implemented in the current code.
     y_start = (ylo + yhi) / 4
     z_start = (zlo + zhi) / 4
     x_end   = (xlo + xhi) / 4 * 3
     y_end   = (ylo + yhi) / 4 * 3
     z_end   = (zlo + zhi) / 4 * 3
+
     mask_Ti = (data['atomtype'] == 3)
     mask_x  = (data['x'] > x_start) & (data['x'] < x_end)
     mask_y  = (data['y'] > y_start) & (data['y'] < y_end)
