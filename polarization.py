@@ -7,46 +7,33 @@ python polarization.py
 '''
 
 def calculate_polarizationperunitcell(unitcell: pd.DataFrame) -> list:
-    '''
-    atoms = pd.DataFrame({},  index = ['x','y','z'])
-    atoms['Ba1'] = [   0.0245698,   -0.287814,  -0.104884 ]
-    atoms['Ba2'] = [     3.99987,   -0.285513,  -0.164884 ]
-    atoms['Ba3'] = [     0.11437,   3.62799  ,  -0.0912843]
-    atoms['Ba4'] = [     4.11987,   3.71019  ,  0.026616  ]
-    atoms['Ba5'] = [ 0.000770142,   -0.438614,  4.01512   ]
-    atoms['Ba6'] = [     4.02727,   -0.375714,  3.97562   ]
-    atoms['Ba7'] = [   0.0400701,   3.65649  ,  3.88302   ]
-    atoms['Ba8'] = [     4.04987,   3.83999  ,  3.95772   ]
-    atoms['O1']  = [     2.01917,  1.64999   , -0.115484  ]
-    atoms['O2']  = [     2.08747,  -0.267314 ,     1.95712]
-    atoms['O3']  = [   0.0425698,     1.70019,     1.90012]
-    atoms['O4']  = [     1.93387,     1.67559,     3.86762]
-    atoms['O5']  = [     2.05907,     3.83779,     1.87682]
-    atoms['O6']  = [     3.99507,     1.89169,     1.85322]
-    atoms['Ti']  = [     2.03547,     1.61119,     2.02362]
-    '''
-    '''
-              atomtype        x        y        z  ppx  ppy  ppz
-    1735       1.0  31.9334  19.9624  16.0193  0.0  0.0  0.0
-    1730       1.0  27.9978  19.9820  15.9751  0.0  0.0  0.0
-    1685       1.0  32.0322  15.9680  15.8836  0.0  0.0  0.0
-    1680       1.0  28.1184  16.0189  15.8560  0.0  0.0  0.0
-    1230       1.0  27.9740  20.1385  11.9737  0.0  0.0  0.0
-    1185       1.0  32.0597  15.9045  11.9897  0.0  0.0  0.0
-    1180       1.0  28.0108  16.0065  11.9308  0.0  0.0  0.0
-    1235       1.0  31.9973  19.9329  11.9196  0.0  0.0  0.0
-    1236       2.0  30.0022  18.0472  12.0102  0.0  0.0  0.0
-    1733       2.0  27.9080  18.0047  14.1104  0.0  0.0  0.0
-    1687       2.0  30.0399  16.0620  13.9414  0.0  0.0  0.0
-    1738       2.0  31.9812  18.1157  14.0358  0.0  0.0  0.0
-    1737       2.0  29.9913  20.0380  14.0454  0.0  0.0  0.0
-    1736       2.0  29.9697  18.0981  16.0517  0.0  0.0  0.0
-    1739       3.0  30.0482  18.0595  13.9687  0.0  0.0  0.0
+    '''    This is how unitcell look like; atomtype 1, 2, 3 refers to Ba, O, Ti
+
+          atomtype        x        y        z  charge  weight
+    1880       1.0  28.0640  32.1431  15.9005     2.0   0.125
+    1825       1.0  24.0622  28.0952  16.0106     2.0   0.125
+    1830       1.0  28.0093  28.1048  15.9362     2.0   0.125
+    1875       1.0  24.0724  32.1496  16.0610     2.0   0.125
+    1380       1.0  28.0440  32.1338  11.9469     2.0   0.125
+    1375       1.0  23.8237  32.0746  11.9631     2.0   0.125
+    1330       1.0  28.0709  28.0860  11.9405     2.0   0.125
+    1325       1.0  24.0328  28.1337  12.0208     2.0   0.125
+    1381       2.0  26.0104  30.1939  11.9385    -2.0   0.500
+    1832       2.0  26.0977  28.2621  13.8121    -2.0   0.500
+    1883       2.0  28.1233  30.3029  13.9472    -2.0   0.500
+    1882       2.0  26.0058  32.2514  13.8832    -2.0   0.500
+    1881       2.0  26.0271  30.2215  15.9246    -2.0   0.500
+    1878       2.0  23.9907  30.1572  14.0518    -2.0   0.500
+    1884       3.0  25.9456  30.0481  13.9087     4.0   1.000
     '''
 
+    latt_x = float(np.max(unitcell['x'])) - float(np.min(unitcell['x']))  # the volume of each unit cell is overestimated. will be changed soon to use the average volume per unit cell
+    latt_y = float(np.max(unitcell['y'])) - float(np.min(unitcell['y']))
+    latt_z = float(np.max(unitcell['z'])) - float(np.min(unitcell['z']))
+    unitcell_vol = latt_x * latt_y * latt_z
+    # print(unitcell)
 
     displacement = unitcell.copy()
-
     '''
     com = pd.Series({'atomtype': 'COM',
         'x': float(np.mean(unitcell['x'])),
@@ -55,17 +42,13 @@ def calculate_polarizationperunitcell(unitcell: pd.DataFrame) -> list:
     displacement[['x','y','z']] = unitcell[['x','y','z']] - com[['x','y','z']]                # take center of mass as reference point for the displacement
     '''
     displacement[['x','y','z']] = unitcell[['x','y','z']].sub(unitcell[['x','y','z']].iloc[-1]) # take the surrounded Ti as reference point for the displacement, following the definition from Speliasky&Cohen, doi: 10.1088/0953-8984/23/43/435902
-    # these two reference points (com or surrounded Ti) end up at the same results, it seems to be always like this.
-    
+    # these two reference points (com or surrounded Ti) end up at the same results.
+    # print(displacement)
+
     displacement['dp_x'] = displacement['x'] * displacement['charge'] * displacement['weight']
     displacement['dp_y'] = displacement['y'] * displacement['charge'] * displacement['weight']
     displacement['dp_z'] = displacement['z'] * displacement['charge'] * displacement['weight']
-    
-    latt_x = float(np.max(displacement['x'])) - float(np.min(displacement['x']))  # the volume of each unit cell is overestimated. will be changed soon to use the average volume per unit cell
-    latt_y = float(np.max(displacement['y'])) - float(np.min(displacement['y']))
-    latt_z = float(np.max(displacement['z'])) - float(np.min(displacement['z']))
-    
-    unitcell_vol = latt_x * latt_y * latt_z
+
     Px = np.sum(displacement['dp_x']) / unitcell_vol * 1600
     Py = np.sum(displacement['dp_y']) / unitcell_vol * 1600
     Pz = np.sum(displacement['dp_z']) / unitcell_vol * 1600
@@ -160,12 +143,13 @@ if __name__ == "__main__":
     polarization_eachuc = pd.DataFrame({}, columns = ['Px', 'Py', 'Pz'])
     polarization_avg = pd.DataFrame({}, columns = ['Px', 'Py', 'Pz'])
 
-    for i in range(80000, 100000, 500):   # specify the timesteps to be extracted
-        filename = f'./converted_timestep_{i}.lmp'
-        info = read_lmp(filename)
-        Px, Py, Pz = loopthroughTi(info)
-        polarization_eachuc.loc[i] = [ Px, Py, Pz ]
-        polarization_avg.loc[i] = [ sum(Px)/len(Px), sum(Py)/len(Py), sum(Pz)/len(Pz) ]
+    # for i in range(80000, 100000, 500):   # specify the timesteps to be extracted
+    i = 995000
+    filename = f'./converted_timestep_{i}.lmp'
+    info = read_lmp(filename)
+    Px, Py, Pz = loopthroughTi(info)
+    polarization_eachuc.loc[i] = [ Px, Py, Pz ]
+    polarization_avg.loc[i] = [ sum(Px)/len(Px), sum(Py)/len(Py), sum(Pz)/len(Pz) ]
 
     polarization_eachuc.to_csv('fullunitcellpolarization_eachuc.csv') # report polarization of each unit cell at each timeframe
     polarization_avg.to_csv('fullunitcellpolarization_avg.csv') # report average polarization of the whole system at each timefrrame
