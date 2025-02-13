@@ -1,3 +1,5 @@
+import sys
+import pathlib
 import numpy as np
 import pandas as pd
 import heapq as hq
@@ -60,7 +62,10 @@ def calculate_polarizationperunitcell(unitcell: pd.DataFrame) -> list:
     Py = np.sum(displacement['dp_y']) / unitcell_vol * unit_eA2_to_muCcm2
     Pz = np.sum(displacement['dp_z']) / unitcell_vol * unit_eA2_to_muCcm2
     # print(f'{Px = }', f'{Py = }', f'{Pz = }')
-    return [Px, Py, Pz]
+
+    com_x, com_y, com_z = [ float(np.mean(unitcell['x'])), float(np.mean(unitcell['y'])), float(np.mean(unitcell['z'])) ] # a list of the position (x, y, z) of the center of mass (com) of the unitcell
+    # print([com_x, com_y, com_z, Px, Py, Pz])
+    return [com_x, com_y, com_z, Px, Py, Pz]
 
 def read_lmp(filename):
 
@@ -98,7 +103,7 @@ def read_lmp(filename):
     return [box, data]
 
 
-def loopthroughTi(dic:dict) -> list:
+def loopthroughTi(dic:dict) -> pd.DataFrame:
     xlo, xhi, ylo, yhi, zlo, zhi = dic[0]
     data = dic[1].drop(['ppx', 'ppy', 'ppz'], axis = 1)
 
@@ -114,17 +119,16 @@ def loopthroughTi(dic:dict) -> list:
     mask_y  = (data['y'] > y_start) & (data['y'] < y_end)
     mask_z  = (data['z'] > z_start) & (data['z'] < z_end)
     Tis = data[ mask_Ti & mask_x & mask_y & mask_z ].sort_values(by=['x', 'y', 'z'], ascending=[True, True, True])    # find the Ti that is not too close to the edge. the number of such Ti is different at each time step, i.e. print(len(Tis)) is different at each time step
-    Px = []
-    Py = []
-    Pz = []
+    
+    j = 0 # the index of unit cell; final_j + 1 == len(Tis)
+    sys_data = pd.DataFrame({}, columns=['x', 'y', 'z', 'px', 'py', 'pz']) 
     for i, _ in Tis.iterrows():
         unitcell = find_surroundingTi(data, i)
-        px, py, pz = calculate_polarizationperunitcell(unitcell)
-        Px.append(px)
-        Py.append(py)
-        Pz.append(pz)
+        sys_data.loc[j] = calculate_polarizationperunitcell(unitcell)
+        j += 1
 
-    return [ Px, Py, Pz ]
+    # print(sys_data)
+    return sys_data
     
 
 
@@ -146,20 +150,35 @@ def find_surroundingTi(data: pd.DataFrame, index: int) -> pd.DataFrame:
     return pd.concat([surrounding_Ba, surrounding_O, surrounded_Ti])
 
 
+# def write_ovito(ovito_timeframe: int, sourcefile: str, num_unitcell: int, box: list) -> :
+#     with open(ovito_file)
+
 
 
 if __name__ == "__main__":
-    # filename = sys.argv[1]
-    polarization_eachuc = pd.DataFrame({}, columns = ['Px', 'Py', 'Pz'])
-    polarization_avg = pd.DataFrame({}, columns = ['Px', 'Py', 'Pz'])
+    ovt_filename = sys.argv[1] + '.ovt'
+    pathlib.Path(ovt_filename).unlink(missing_ok=True)
 
-    # for i in range(80000, 100000, 500):   # specify the timesteps to be extracted
-    i = 995000
-    filename = f'./converted_timestep_{i}.lmp'
-    info = read_lmp(filename)
-    Px, Py, Pz = loopthroughTi(info)
-    polarization_eachuc.loc[i] = [ Px, Py, Pz ]
-    polarization_avg.loc[i] = [ sum(Px)/len(Px), sum(Py)/len(Py), sum(Pz)/len(Pz) ]
 
-    polarization_eachuc.to_csv('fullunitcellpolarization_eachuc.csv') # report polarization of each unit cell at each timeframe
-    polarization_avg.to_csv('fullunitcellpolarization_avg.csv') # report average polarization of the whole system at each timefrrame
+    # specify the timesteps where polarization needs to be estimated
+    start    = 990000     # start
+    end      = 995000    # end
+    interval = 5000       # depends on the output frequency of lammps
+    for i in range(start, end+1, interval):   
+        filename = f'./converted_timestep_{i}.lmp'
+        info = read_lmp(filename) # info = [box, data]
+        xlo, xhi, ylo, yhi, zlo, zhi = info[0]
+        sys_data = loopthroughTi(info)
+
+        with open(ovt_filename, 'a+') as ovt:
+            ovt.write('ITEM: TIMESTEP\n'
+                f'{i-start} {filename}\n'
+                'ITEM: NUMBER OF ATOMS\n'
+                f'{len(sys_data)}\n'
+                'ITEM: BOX BOUNDS pp pp pp\n'
+                f'{xlo} {xhi}\n'
+                f'{ylo} {yhi}\n'
+                f'{zlo} {zhi}\n'
+                'ITEM: ATOMS id x y z px py pz\n')
+            sys_data.to_csv(ovt, sep='\t', header=False)
+
