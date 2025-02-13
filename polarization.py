@@ -109,47 +109,155 @@ def read_lmp(filename: str) -> list[ list[float], pd.DataFrame ]:
 def loopthroughTi(dic: dict) -> pd.DataFrame:
     xlo, xhi, ylo, yhi, zlo, zhi = dic[0]
     data = dic[1].drop(['ppx', 'ppy', 'ppz'], axis = 1)
+    # data.to_csv('data.csv')
 
-    x_start = (xlo + xhi) / 4 # /4 or 3/4 is just to avoid being too close to the system boundary (thus, can be changed), as periodic image is not yet implemented in the current code.
-    y_start = (ylo + yhi) / 4
-    z_start = (zlo + zhi) / 4
-    x_end   = (xlo + xhi) / 4 * 3
-    y_end   = (ylo + yhi) / 4 * 3
-    z_end   = (zlo + zhi) / 4 * 3
+    # x_start = xlo # (xlo + xhi) / 4 # /4 or 3/4 is just to avoid being too close to the system boundary (thus, can be changed), as periodic image is not yet implemented in the current code.
+    # y_start = ylo # (ylo + yhi) / 4
+    # z_start = zlo # (zlo + zhi) / 4
+    # x_end   = xhi # (xlo + xhi) / 4 * 3
+    # y_end   = yhi # (ylo + yhi) / 4 * 3
+    # z_end   = zhi # (zlo + zhi) / 4 * 3
 
+    # mask_Ti = (data['atomtype'] == 3)
+    # mask_x  = (data['x'] > x_start) & (data['x'] < x_end)
+    # mask_y  = (data['y'] > y_start) & (data['y'] < y_end)
+    # mask_z  = (data['z'] > z_start) & (data['z'] < z_end)
+    # Tis = data[ mask_Ti & mask_x & mask_y & mask_z ].sort_values(by=['x', 'y', 'z'], ascending=[True, True, True])    # find the Ti that is not too close to the edge. the number of such Ti is different at each time step, i.e. print(len(Tis)) is different at each time step
+
+    # deal with Ti atoms at the boundary and central differently. Only those at the boundary are expected to not have complete unit cells and will thus get atoms from periodic image. (This enables future work on vacuum and defects in the central of the system, e.g. oxygen vacancy)
     mask_Ti = (data['atomtype'] == 3)
-    mask_x  = (data['x'] > x_start) & (data['x'] < x_end)
-    mask_y  = (data['y'] > y_start) & (data['y'] < y_end)
-    mask_z  = (data['z'] > z_start) & (data['z'] < z_end)
-    Tis = data[ mask_Ti & mask_x & mask_y & mask_z ].sort_values(by=['x', 'y', 'z'], ascending=[True, True, True])    # find the Ti that is not too close to the edge. the number of such Ti is different at each time step, i.e. print(len(Tis)) is different at each time step
+    Tis = data[ mask_Ti ].sort_values(by=['x', 'y', 'z'], ascending=[True, True, True])    # find all Ti
+    mask_boundary_x = (Tis['x'] < (2.5 + xlo)) | (Tis['x'] > (xhi - 2.5))
+    mask_boundary_y = (Tis['y'] < (2.5 + ylo)) | (Tis['y'] > (yhi - 2.5))
+    mask_boundary_z = (Tis['z'] < (2.5 + zlo)) | (Tis['z'] > (zhi - 2.5))
+    mask_boundary_all = ( mask_boundary_x | mask_boundary_y | mask_boundary_z )
+    mask_central_all = ( ~mask_boundary_all )
     
-    j = 0 # the index of unit cell; final_j + 1 == len(Tis)
-    sys_data = pd.DataFrame({}, columns=['x', 'y', 'z', 'px', 'py', 'pz']) 
-    for i, _ in Tis.iterrows():
-        unitcell = find_surroundingTi(data, i)
-        sys_data.loc[j] = calculate_polarizationperunitcell(unitcell)
-        j += 1
+    # Tis[mask_boundary_all].to_csv('boundaryTi.csv')
+    # Tis[mask_central_all].to_csv('centralTi.csv')
+    # Tis.to_csv('allTi.csv')
 
+    # deal with central Ti atoms
+    centraluc = pd.DataFrame({}, columns=['x', 'y', 'z', 'px', 'py', 'pz']) 
+    for i, _ in Tis[mask_central_all].iterrows():
+        unitcell = find_surroundingTi(info, i, 'none')
+        centraluc.loc[len(centraluc.index)] = calculate_polarizationperunitcell(unitcell)
+    # centraluc.to_csv('centraluc.csv')
+
+    # deal with Ti atoms at boundary, need to complete their unitcell
+    boundaryuc = pd.DataFrame({}, columns=['x', 'y', 'z', 'px', 'py', 'pz']) 
+    for i, _ in Tis[mask_boundary_all].iterrows():
+        unitcell = find_surroundingTi(info, i, 'periodicimage')
+        boundaryuc.loc[len(boundaryuc.index)] = calculate_polarizationperunitcell(unitcell)
+    # boundaryuc.to_csv('boundaryuc.csv')
+
+    sys_data = pd.concat([boundaryuc, centraluc], ignore_index=True)
     # print(sys_data)
     return sys_data
     
 
 
-def find_surroundingTi(data: pd.DataFrame, index: int) -> pd.DataFrame:
-    # this function finds the 8 surrounding Ba and 6 surrounding O of each Ti.
-    surrounded_Ti = pd.DataFrame(data.loc[index]).T
-    pos_x, pos_y, pos_z = [ float(surrounded_Ti.iloc[0][axis]) for axis in ['x', 'y', 'z'] ]   # pos_x, pos_y, pos_z = [ 21.8977 , 21.9272 , 21.8901] # one Ti position
-    mask_Ba = (data['atomtype'] == 1)
-    mask_O  = (data['atomtype'] == 2)
-    mask_x  = (data['x'] > pos_x - 3) & (data['x'] < pos_x + 3)
-    mask_y  = (data['y'] > pos_y - 3) & (data['y'] < pos_y + 3)
-    mask_z  = (data['z'] > pos_z - 3) & (data['z'] < pos_z + 3)
-    surrounding_Ba = data[mask_Ba & mask_x & mask_y & mask_z]
-    surrounding_O  = data[mask_O  & mask_x & mask_y & mask_z]
-    if len(surrounding_Ba) != 8:
-        print('wrong')
-    if len(surrounding_O) != 6:
-        print('wrong')
+def find_surroundingTi(info: dict, index: int, tag: str) -> pd.DataFrame:
+    xlo, xhi, ylo, yhi, zlo, zhi = info[0]
+    data = info[1].drop(['ppx', 'ppy', 'ppz'], axis = 1)
+    # try: ;  exception: for defects...
+
+    if tag == 'none':
+        # this function finds the 8 surrounding Ba and 6 surrounding O of each Ti.
+        surrounded_Ti = pd.DataFrame(data.loc[index]).T
+        # print(surrounded_Ti)
+        pos_x, pos_y, pos_z = [ float(surrounded_Ti.iloc[0][axis]) for axis in ['x', 'y', 'z'] ]   # pos_x, pos_y, pos_z = [ 21.8977 , 21.9272 , 21.8901] # one Ti position
+        mask_Ba = (data['atomtype'] == 1)
+        mask_O  = (data['atomtype'] == 2)
+        mask_x  = (data['x'] > (pos_x - 3)) & (data['x'] < (pos_x + 3))
+        mask_y  = (data['y'] > (pos_y - 3)) & (data['y'] < (pos_y + 3))
+        mask_z  = (data['z'] > (pos_z - 3)) & (data['z'] < (pos_z + 3))
+        surrounding_Ba = data[mask_Ba & mask_x & mask_y & mask_z]
+        surrounding_O  = data[mask_O  & mask_x & mask_y & mask_z]
+        # print(surrounding_Ba)
+        # print(surrounding_O)
+        if len(surrounding_Ba) != 8:
+            print('wrong')
+        if len(surrounding_O) != 6:
+            print('wrong')
+    elif tag == 'periodicimage':
+        # this function complete the incomplete unitcell at boundary by taking atom from periodic image
+        surrounded_Ti = pd.DataFrame(data.loc[index]).T
+        pos_x, pos_y, pos_z = [ float(surrounded_Ti.iloc[0][axis]) for axis in ['x', 'y', 'z'] ]   # pos_x, pos_y, pos_z = [ 21.8977 , 21.9272 , 21.8901] # one Ti position
+        mask_Ba = (data['atomtype'] == 1)
+        mask_O  = (data['atomtype'] == 2)
+        mask_x    = ( (data['x'] > (pos_x - 3)) & (data['x'] < (pos_x + 3)) )
+        mask_y    = ( (data['y'] > (pos_y - 3)) & (data['y'] < (pos_y + 3)) )
+        mask_z    = ( (data['z'] > (pos_z - 3)) & (data['z'] < (pos_z + 3)) )
+        mask_x_1  = (data['x'] > (pos_x - 3 + xhi - xlo))
+        mask_y_1  = (data['y'] > (pos_y - 3 + yhi - ylo))
+        mask_z_1  = (data['z'] > (pos_z - 3 + zhi - zlo))
+        mask_x_2  = (data['x'] < (pos_x + 3 - xhi + xlo))
+        mask_y_2  = (data['y'] < (pos_y + 3 - yhi + ylo))
+        mask_z_2  = (data['z'] < (pos_z + 3 - zhi + zlo))
+        surrounding_Ba = data[mask_Ba & (mask_x | mask_x_1 | mask_x_2) & (mask_y | mask_y_1 | mask_y_2) & (mask_z | mask_z_1 | mask_z_2)]
+        surrounding_O  = data[mask_O  & (mask_x | mask_x_1 | mask_x_2) & (mask_y | mask_y_1 | mask_y_2) & (mask_z | mask_z_1 | mask_z_2)]
+
+        # the postition from periodic image should be wrapped into the cell
+        d = surrounding_Ba
+        m_x_1  = (d['x'] > (pos_x - 3 + xhi - xlo))
+        m_y_1  = (d['y'] > (pos_y - 3 + yhi - ylo))
+        m_z_1  = (d['z'] > (pos_z - 3 + zhi - zlo))
+        m_x_2  = (d['x'] < (pos_x + 3 - xhi + xlo))
+        m_y_2  = (d['y'] < (pos_y + 3 - yhi + ylo))
+        m_z_2  = (d['z'] < (pos_z + 3 - zhi + zlo))
+        masks = {
+            'm_x_1': m_x_1,
+            'm_y_1': m_y_1,
+            'm_z_1': m_z_1,
+            'm_x_2': m_x_2,
+            'm_y_2': m_y_2,
+            'm_z_2': m_z_2}
+        if not d[m_x_1].empty:
+            d.loc[d[m_x_1].index, 'x'] -= (xhi-xlo)
+        if not d[m_y_1].empty:
+            d.loc[d[m_y_1].index, 'y'] -= (yhi-ylo)
+        if not d[m_z_1].empty:
+            d.loc[d[m_z_1].index, 'z'] -= (zhi-zlo)
+        if not d[m_x_2].empty:
+            d.loc[d[m_x_2].index, 'x'] += (xhi-xlo)
+        if not d[m_y_2].empty:
+            d.loc[d[m_y_2].index, 'y'] += (yhi-ylo)
+        if not d[m_z_2].empty:
+            d.loc[d[m_z_2].index, 'z'] += (zhi-zlo)
+
+        d = surrounding_O
+        m_x_1  = (d['x'] > (pos_x - 3 + xhi - xlo))
+        m_y_1  = (d['y'] > (pos_y - 3 + yhi - ylo))
+        m_z_1  = (d['z'] > (pos_z - 3 + zhi - zlo))
+        m_x_2  = (d['x'] < (pos_x + 3 - xhi + xlo))
+        m_y_2  = (d['y'] < (pos_y + 3 - yhi + ylo))
+        m_z_2  = (d['z'] < (pos_z + 3 - zhi + zlo))
+        masks = {
+            'm_x_1': m_x_1,
+            'm_y_1': m_y_1,
+            'm_z_1': m_z_1,
+            'm_x_2': m_x_2,
+            'm_y_2': m_y_2,
+            'm_z_2': m_z_2}
+        if not d[m_x_1].empty:
+            d.loc[d[m_x_1].index, 'x'] -= (xhi-xlo)
+        if not d[m_y_1].empty:
+            d.loc[d[m_y_1].index, 'y'] -= (yhi-ylo)
+        if not d[m_z_1].empty:
+            d.loc[d[m_z_1].index, 'z'] -= (zhi-zlo)
+        if not d[m_x_2].empty:
+            d.loc[d[m_x_2].index, 'x'] += (xhi-xlo)
+        if not d[m_y_2].empty:
+            d.loc[d[m_y_2].index, 'y'] += (yhi-ylo)
+        if not d[m_z_2].empty:
+            d.loc[d[m_z_2].index, 'z'] += (zhi-zlo)
+ 
+ 
+        if len(surrounding_Ba) != 8:
+            print('wrong')
+        if len(surrounding_O) != 6:
+            print('wrong')
     return pd.concat([surrounding_Ba, surrounding_O, surrounded_Ti])
 
 
@@ -164,7 +272,7 @@ if __name__ == "__main__":
 
 
     # USER: specify the timesteps where polarization needs to be estimated
-    start    = 990000     # start
+    start    = 995000     # start
     end      = 995000    # end
     interval = 5000       # depends on the output frequency of lammps
 
@@ -172,6 +280,7 @@ if __name__ == "__main__":
         filename = f'./converted_timestep_{i}.lmp'
         info = read_lmp(filename) # info = [box, data]
         xlo, xhi, ylo, yhi, zlo, zhi = info[0]
+        # print(info)
         sys_data = loopthroughTi(info)
 
         with open(ovt_filename, 'a+') as ovt:
