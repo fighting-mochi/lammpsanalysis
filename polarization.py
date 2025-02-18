@@ -269,6 +269,7 @@ def find_surroundingTi(info: dict, index: int, tag: str) -> pd.DataFrame:
 if __name__ == "__main__":
     ovt_filename = sys.argv[1] + '.ovt'
     pathlib.Path(ovt_filename).unlink(missing_ok=True)
+    pathlib.Path(sys.argv[1]+'.json').unlink(missing_ok=True)
     pathlib.Path('fullunitcellpolarization_avg').unlink(missing_ok=True)
     pathlib.Path('fullunitcellpolarization_eachuc').unlink(missing_ok=True)
 
