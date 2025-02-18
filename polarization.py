@@ -269,7 +269,10 @@ def find_surroundingTi(info: dict, index: int, tag: str) -> pd.DataFrame:
 if __name__ == "__main__":
     ovt_filename = sys.argv[1] + '.ovt'
     pathlib.Path(ovt_filename).unlink(missing_ok=True)
+    pathlib.Path('fullunitcellpolarization_avg').unlink(missing_ok=True)
+    pathlib.Path('fullunitcellpolarization_eachuc').unlink(missing_ok=True)
 
+    polarization_avg = pd.DataFrame({}, columns = ['px', 'py', 'pz'])
 
     # USER: specify the timesteps where polarization needs to be estimated
     start    = 995000     # start
@@ -283,6 +286,8 @@ if __name__ == "__main__":
         # print(info)
         sys_data = loopthroughTi(info)
 
+        polarization_avg.loc[i] = [ sys_data['px'].mean(), sys_data['py'].mean(), sys_data['pz'].mean() ]
+
         with open(ovt_filename, 'a+') as ovt:
             ovt.write('ITEM: TIMESTEP\n'
                 f'{i-start} {filename}\n'
@@ -295,3 +300,4 @@ if __name__ == "__main__":
                 'ITEM: ATOMS id x y z px py pz\n')
             sys_data.to_csv(ovt, sep='\t', header=False)
 
+    polarization_avg.to_csv('fullunitcellpolarization_avg.csv')
