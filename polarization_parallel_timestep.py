@@ -281,7 +281,26 @@ def process_timestep(i):
     filename = f'./converted_timestep_{i}.lmp'
     info = read_lmp(filename)  # info = [box, data]
     xlo, xhi, ylo, yhi, zlo, zhi = info[0]
-    sys_data = loopthroughTi(info)
+
+    # here, the bec from literature is used. this will be replaced by les-prediction
+    chg_Ba = np.array([[ 2.77, 0 ,0], 
+                       [ 0, 2.77 ,0], 
+                       [ 0, 0 ,2.77]])
+    chg_Ti = np.array([[ 7.25, 0, 0],
+                       [ 0, 7.25, 0],
+                       [ 0, 0, 7.25]])
+    chg_O1 = np.array([[-2.15, 0, 0],      # +-z
+                       [0, -2.15, 0],
+                       [0, 0, -5.71]])
+    chg_O2 = np.array([[-2.15, 0, 0],      # +-y
+                       [0, -5.71, 0],
+                       [0, 0, -2.15]])
+    chg_O3 = np.array([[-5.71, 0, 0],      # +-x
+                       [0, -2.15, 0],
+                       [0, 0, -2.15]])
+    becs = {'chg_Ba': chg_Ba, 'chg_Ti': chg_Ti, 'chg_O1': chg_O1, 'chg_O2': chg_O2, 'chg_O3': chg_O3}
+
+    sys_data = loopthroughTi(info, becs)
 
     # Prepare content to write to the output file for this timestep
     output_lines = [
@@ -293,14 +312,14 @@ def process_timestep(i):
         f'{xlo} {xhi}\n',
         f'{ylo} {yhi}\n',
         f'{zlo} {zhi}\n',
-        'ITEM: ATOMS id x y z px py pz\n'
+        'ITEM: ATOMS id x y z px py pz px_bec py_bec pz_bec\n' # x,y,z: position. px,py,pz: polarization based on nominal charges. px_bec,py_bec,pz_bec: polarization based on bec tensors.
     ]
     from io import StringIO
     csv_buffer = StringIO()
     sys_data.to_csv(csv_buffer, sep='\t', header=False, index=True)
     output_lines.append(csv_buffer.getvalue())
 
-    polarization_means = [sys_data['px'].mean(), sys_data['py'].mean(), sys_data['pz'].mean()]
+    polarization_means = [sys_data['px'].mean(), sys_data['py'].mean(), sys_data['pz'].mean(), sys_data['px_bec'].mean(), sys_data['py_bec'].mean(), sys_data['pz_bec'].mean()]
 
     # Return both the timestep index, polarization averages and output content string
     return (i, polarization_means, ''.join(output_lines))
@@ -321,24 +340,7 @@ if __name__ == "__main__":
     end      = 995001    # end
     interval = 5000       # depends on the output frequency of lammps
 
-    # here, the bec from literature is used. this will be replaced by les-prediction
-    chg_Ba = np.array([[ 2.77, 0 ,0], 
-                       [ 0, 2.77 ,0], 
-                       [ 0, 0 ,2.77]])
-    chg_Ti = np.array([[ 7.25, 0, 0],
-                       [ 0, 7.25, 0],
-                       [ 0, 0, 7.25]])
-    chg_O1 = np.array([[-2.15, 0, 0],      # +-z
-                       [0, -2.15, 0],
-                       [0, 0, -5.71]])
-    chg_O2 = np.array([[-2.15, 0, 0],      # +-y
-                       [0, -5.71, 0],
-                       [0, 0, -2.15]])
-    chg_O3 = np.array([[-5.71, 0, 0],      # +-x
-                       [0, -2.15, 0],
-                       [0, 0, -2.15]])
-    becs = {'chg_Ba': chg_Ba, 'chg_Ti': chg_Ti, 'chg_O1': chg_O1, 'chg_O2': chg_O2, 'chg_O3': chg_O3}
- 
+
     # Create the list of indices to process
     indices = list(range(start, end + 1, interval))
 
