@@ -17,7 +17,7 @@ search "USER" for parameters and setting, that you might want to change based on
 
 unit_eA2_to_muCcm2 = 1602.176634  # e/Ang^2 -> muC/cm^2
 
-def calculate_polarizationperunitcell(unitcell: pd.DataFrame) -> list[float]:
+def calculate_polarizationperunitcell(unitcell: pd.DataFrame, becs: dict) -> list[float]:
     '''    This is how unitcell look like; atomtype 1, 2, 3 refers to Ba, O, Ti
 
     unit: charge (e), distance (Ang)
@@ -49,21 +49,63 @@ def calculate_polarizationperunitcell(unitcell: pd.DataFrame) -> list[float]:
     # print(f'{latt_x  = }', f'{latt_y  = }', f'{latt_z = }', f'{unitcell_vol = }')
 
     displacement = unitcell.copy()
+    # these two reference points (com or surrounded Ti) end up at the same results.
+    '''
+    com = pd.Series({'atomtype': 'COM',
+        'x': float(np.mean(unitcell['x'])),
+        'y': float(np.mean(unitcell['y'])),
+        'z': float(np.mean(unitcell['z']))})
+    displacement[['x','y','z']] = unitcell[['x','y','z']] - com[['x','y','z']]                # take center of mass as reference point for the displacement
+    '''
     displacement[['x','y','z']] = unitcell[['x','y','z']].sub(unitcell[['x','y','z']].iloc[-1]) # take the surrounded Ti as reference point for the displacement, following the definition from Speliasky&Cohen, doi: 10.1088/0953-8984/23/43/435902
-
-    displacement['dp_x'] = displacement['x'] * displacement['charge'] * displacement['weight']
-    displacement['dp_y'] = displacement['y'] * displacement['charge'] * displacement['weight']
-    displacement['dp_z'] = displacement['z'] * displacement['charge'] * displacement['weight']
     # print(displacement)
 
+    # we need position as a vector for polarization calculation using bec tensor (codes can be cleaned up)
+    displacement['pos'] = displacement.apply(lambda row: [row['x'], row['y'], row['z']], axis=1)
+    displacement['bec'] = None # initialize bec
+    min_x = displacement.loc[ displacement['atomtype']==2, 'x' ].idxmin()
+    max_x = displacement.loc[ displacement['atomtype']==2, 'x' ].idxmax()
+    min_y = displacement.loc[ displacement['atomtype']==2, 'y' ].idxmin()
+    max_y = displacement.loc[ displacement['atomtype']==2, 'y' ].idxmax()
+    min_z = displacement.loc[ displacement['atomtype']==2, 'z' ].idxmin()
+    max_z = displacement.loc[ displacement['atomtype']==2, 'z' ].idxmax()
+    displacement.at[min_x, 'bec'] = 'chg_O3'
+    displacement.at[max_x, 'bec'] = 'chg_O3'
+    displacement.at[min_y, 'bec'] = 'chg_O2'
+    displacement.at[max_y, 'bec'] = 'chg_O2'
+    displacement.at[min_z, 'bec'] = 'chg_O1'
+    displacement.at[max_z, 'bec'] = 'chg_O1'
+
+    displacement.loc[displacement['atomtype']==1, 'bec'] = 'chg_Ba'
+    displacement.loc[displacement['atomtype']==3, 'bec'] = 'chg_Ti'
+
+    # calculate polarizatoin based on nominal charges
+    displacement['dp_x'] = displacement['weight'] * ( displacement['charge'] * displacement['x'] )
+    displacement['dp_y'] = displacement['weight'] * ( displacement['charge'] * displacement['y'] )
+    displacement['dp_z'] = displacement['weight'] * ( displacement['charge'] * displacement['z'] )
+    # print(displacement)
     Px = np.sum(displacement['dp_x']) / unitcell_vol * unit_eA2_to_muCcm2
     Py = np.sum(displacement['dp_y']) / unitcell_vol * unit_eA2_to_muCcm2
     Pz = np.sum(displacement['dp_z']) / unitcell_vol * unit_eA2_to_muCcm2
     # print(f'{Px = }', f'{Py = }', f'{Pz = }')
+    # P_nominal = [Px, Py, Pz]
+    # print(f'{P_nominal}')
 
+    # calculate polarizatoin based on bec (born effective charges)
+    # print(displacement)
+    # displacement.to_csv('displacement.csv')
+    displacement['P_bec'] = displacement.apply(
+        lambda row: row['weight'] * (becs[row['bec']] @ row['pos']),
+        axis = 1
+    )
+    
+    P_bec = np.sum(displacement['P_bec']) / unitcell_vol * unit_eA2_to_muCcm2
+    # print(P_bec)
+    Px_bec, Py_bec, Pz_bec = P_bec
+ 
     com_x, com_y, com_z = [ float(np.mean(unitcell['x'])), float(np.mean(unitcell['y'])), float(np.mean(unitcell['z'])) ] # a list of the position (x, y, z) of the center of mass (com) of the unitcell
     # print([com_x, com_y, com_z, Px, Py, Pz])
-    return [com_x, com_y, com_z, Px, Py, Pz]
+    return [com_x, com_y, com_z, Px, Py, Pz, Px_bec, Py_bec, Pz_bec]
 
 def read_lmp(filename: str) -> list[ list[float], pd.DataFrame ]:
 
@@ -101,7 +143,7 @@ def read_lmp(filename: str) -> list[ list[float], pd.DataFrame ]:
     return [box, data]
 
 
-def loopthroughTi(info: dict) -> pd.DataFrame:
+def loopthroughTi(info: dict, becs: dict) -> pd.DataFrame:
     xlo, xhi, ylo, yhi, zlo, zhi = info[0]
     data = info[1].drop(['ppx', 'ppy', 'ppz'], axis = 1)
 
@@ -115,16 +157,16 @@ def loopthroughTi(info: dict) -> pd.DataFrame:
     mask_central_all = ( ~mask_boundary_all )
 
     # deal with central Ti atoms
-    centraluc = pd.DataFrame({}, columns=['x', 'y', 'z', 'px', 'py', 'pz']) 
+    centraluc = pd.DataFrame({}, columns=['x', 'y', 'z', 'px', 'py', 'pz', 'px_bec', 'py_bec', 'pz_bec'])
     for i, _ in Tis[mask_central_all].iterrows():
         unitcell = find_surroundingTi(info, i, 'none')
-        centraluc.loc[len(centraluc.index)] = calculate_polarizationperunitcell(unitcell)
+        centraluc.loc[len(centraluc.index)] = calculate_polarizationperunitcell(unitcell, becs)
 
     # deal with Ti atoms at boundary, need to complete their unitcell
-    boundaryuc = pd.DataFrame({}, columns=['x', 'y', 'z', 'px', 'py', 'pz']) 
+    boundaryuc = pd.DataFrame({}, columns=['x', 'y', 'z', 'px', 'py', 'pz', 'px_bec', 'py_bec', 'pz_bec'])
     for i, _ in Tis[mask_boundary_all].iterrows():
         unitcell = find_surroundingTi(info, i, 'periodicimage')
-        boundaryuc.loc[len(boundaryuc.index)] = calculate_polarizationperunitcell(unitcell)
+        boundaryuc.loc[len(boundaryuc.index)] = calculate_polarizationperunitcell(unitcell, becs)
     # boundaryuc.to_csv('boundaryuc.csv')
 
     sys_data = pd.concat([boundaryuc, centraluc], ignore_index=True)
@@ -263,7 +305,7 @@ def process_timestep(i):
     # Return both the timestep index, polarization averages and output content string
     return (i, polarization_means, ''.join(output_lines))
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print(datetime.now())
 # def main(): # only for profiling
     ovt_filename = sys.argv[1] + '.ovt'
@@ -272,18 +314,36 @@ if __name__ == '__main__':
     pathlib.Path('fullunitcellpolarization_avg.csv').unlink(missing_ok=True)
     pathlib.Path('fullunitcellpolarization_eachuc.csv').unlink(missing_ok=True)
 
-    polarization_avg = pd.DataFrame({}, columns = ['px', 'py', 'pz'])
+    polarization_avg = pd.DataFrame({}, columns = ['px', 'py', 'pz', 'px_bec', 'py_bec', 'pz_bec'])
 
     # USER: specify the timesteps where polarization needs to be estimated
-    start    = 980000     # start
-    end      = 995000    # end
+    start    = 995000     # start
+    end      = 995001    # end
     interval = 5000       # depends on the output frequency of lammps
+
+    # here, the bec from literature is used. this will be replaced by les-prediction
+    chg_Ba = np.array([[ 2.77, 0 ,0], 
+                       [ 0, 2.77 ,0], 
+                       [ 0, 0 ,2.77]])
+    chg_Ti = np.array([[ 7.25, 0, 0],
+                       [ 0, 7.25, 0],
+                       [ 0, 0, 7.25]])
+    chg_O1 = np.array([[-2.15, 0, 0],      # +-z
+                       [0, -2.15, 0],
+                       [0, 0, -5.71]])
+    chg_O2 = np.array([[-2.15, 0, 0],      # +-y
+                       [0, -5.71, 0],
+                       [0, 0, -2.15]])
+    chg_O3 = np.array([[-5.71, 0, 0],      # +-x
+                       [0, -2.15, 0],
+                       [0, 0, -2.15]])
+    becs = {'chg_Ba': chg_Ba, 'chg_Ti': chg_Ti, 'chg_O1': chg_O1, 'chg_O2': chg_O2, 'chg_O3': chg_O3}
  
     # Create the list of indices to process
     indices = list(range(start, end + 1, interval))
 
     # Use multiprocessing Pool
-    with multiprocessing.Pool(processes=4) as pool:
+    with multiprocessing.Pool(processes=10) as pool:
         results = pool.map(process_timestep, indices)
 
     # Sort results by timestep in case multiprocessing returns unordered
